@@ -1,0 +1,10 @@
+### Chart Created: Revenue Over Time
+
+Chart Type: **line**
+X-Axis: **Date**
+Y-Axis: **Revenue_USD**
+Data Points: **10**
+
+---CHART-START---
+{"chartConfig":{"type":"line","title":"Revenue Over Time","data":{"x":["2025-01-01","2025-01-02","2025-01-03","2025-01-04","2025-01-05","2025-01-06","2025-01-07","2025-01-08","2025-01-09","2025-01-10"],"y":[3995000,3597000,1598000,3595500,3247500,2158200,4154800,3716900,1518100,3507300],"xLabel":"Date","yLabel":"Revenue_USD"},"layout":{"title":"Revenue Over Time","xaxis":{"title":"Date"},"yaxis":{"title":"Revenue_USD"},"responsive":true},"plotlyType":"line","plotlyData":[{"x":["2025-01-01","2025-01-02","2025-01-03","2025-01-04","2025-01-05","2025-01-06","2025-01-07","2025-01-08","2025-01-09","2025-01-10"],"y":[3995000,3597000,1598000,3595500,3247500,2158200,4154800,3716900,1518100,3507300],"mode":"lines+markers","type":"scatter","name":"Revenue_USD"}]}}
+---CHART-END---

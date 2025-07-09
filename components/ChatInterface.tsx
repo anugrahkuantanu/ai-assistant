@@ -7,7 +7,7 @@ import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import WelcomeMessage from "@/components/WelcomeMessage";
 import { createSSEParser } from "@/lib/SSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Paperclip } from "lucide-react";
 import { getConvexClient } from "@/lib/convex";
 import { api } from "@/convex/_generated/api";
 import { useModelConfig } from "@/components/ModelConfigProvider";
@@ -31,6 +31,31 @@ export default function ChatInterface({
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { config } = useModelConfig();
+
+  const [file, setFile] = useState<File | null>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const file = e.target.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error('File upload failed');
+        }
+
+        console.log('File uploaded successfully');
+      } catch (error) {
+        console.error('Error uploading file:', error);
+      }
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -293,12 +318,26 @@ export default function ChatInterface({
       <footer className="border-t bg-white p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative">
           <div className="relative flex items-center">
+            <Button
+                type="button"
+                onClick={() => document.getElementById('file-upload')?.click()}
+                className="absolute left-1.5 rounded-xl h-9 w-9 p-0 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-500"
+              >
+                <Paperclip />
+              </Button>
+              <input
+                id="file-upload"
+                type="file"
+                className="hidden"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+              />
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Message AI Agent..."
-              className="flex-1 py-3 px-4 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12 bg-gray-50 placeholder:text-gray-500"
+              className="flex-1 py-3 px-12 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12 bg-gray-50 placeholder:text-gray-500"
               disabled={isLoading}
             />
             <Button

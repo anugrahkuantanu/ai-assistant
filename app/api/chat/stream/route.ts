@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
         try {
           // Create the event stream
-          const eventStream = await submitQuestion(langChainMessages, chatId, modelConfig);
+          const eventStream = await submitQuestion(langChainMessages, chatId, modelConfig, userId);
 
           // Process the events
           for await (const event of eventStream) {

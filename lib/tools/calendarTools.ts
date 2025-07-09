@@ -480,7 +480,7 @@ export const checkCalendarConflictsTool = tool(
 
 // Enhanced event creation with conflict checking built-in
 export const createCalendarEventTool = tool(
-  async ({ summary, startTime, endTime, description = "", location = "", userTimezone, forceCreate = false }) => {
+  async ({ summary, startTime, endTime, description = "", location = "", userTimezone, attendees = [], forceCreate = false }) => {
     try {
       const config = getCalendarConfig();
       
@@ -595,6 +595,32 @@ Please let me know how you'd like to proceed.`,
       // Generate unique UID
       const uid = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}@ai-calendar`;
       
+      // Process attendees with validation to avoid example emails
+      const validAttendees = attendees
+        .map((email: string) => email.trim())
+        .filter((email: string) => {
+          // Validate email format
+          if (!email || !email.includes('@')) return false;
+          
+          // Filter out example/placeholder emails to avoid hallucinations
+          const lowerEmail = email.toLowerCase();
+          const exampleDomains = ['example.com', 'example.org', 'test.com', 'domain.com', 'company.com', 'email.com'];
+          const examplePatterns = ['john@', 'jane@', 'user@', 'test@', 'admin@', 'demo@'];
+          
+          // Check for example domains
+          if (exampleDomains.some(domain => lowerEmail.endsWith(domain))) return false;
+          
+          // Check for example patterns
+          if (examplePatterns.some(pattern => lowerEmail.startsWith(pattern))) return false;
+          
+          return true;
+        });
+      
+      // Create attendee lines for iCalendar
+      const attendeeLines = validAttendees.map((email: string) => 
+        `ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${email}`
+      );
+      
       // Create iCalendar event
       const eventData = [
         "BEGIN:VCALENDAR",
@@ -603,11 +629,13 @@ Please let me know how you'd like to proceed.`,
         "CALSCALE:GREGORIAN",
         "BEGIN:VEVENT",
         `UID:${uid}`,
+        `ORGANIZER;CN=${config.email}:mailto:${config.email}`,
         `SUMMARY:${escapeICalString(summary)}`,
         `DTSTART:${formatICalDate(eventStart)}`,
         `DTEND:${formatICalDate(eventEnd)}`,
         ...(description ? [`DESCRIPTION:${escapeICalString(description)}`] : []),
         ...(location ? [`LOCATION:${escapeICalString(location)}`] : []),
+        ...attendeeLines,
         "STATUS:CONFIRMED",
         `DTSTAMP:${formatICalDate(new Date())}`,
         `CREATED:${formatICalDate(new Date())}`,
@@ -624,7 +652,7 @@ Please let me know how you'd like to proceed.`,
 
       return {
         success: true,
-        message: `Event "${summary}" created successfully${forceCreate ? ' (forced creation with conflicts)' : ''}`,
+        message: `Event "${summary}" created successfully${forceCreate ? ' (forced creation with conflicts)' : ''}${validAttendees.length > 0 ? ` with ${validAttendees.length} attendee(s)` : ''}`,
         event: {
           uid,
           summary,
@@ -632,6 +660,7 @@ Please let me know how you'd like to proceed.`,
           endTime: DateUtils.formatDateForDisplay(eventEnd, userTimezone),
           description,
           location,
+          attendees: validAttendees,
           timezone: userTimezone,
         },
         provider: config.caldavUrl,
@@ -670,6 +699,7 @@ Please let me know how you'd like to proceed.`,
       endTime: z.string().describe("Event end time (natural language or ISO format)"),
       description: z.string().optional().default("").describe("Event description (optional)"),
       location: z.string().optional().default("").describe("Event location (optional)"),
+      attendees: z.array(z.string().email()).optional().default([]).describe("Array of attendee email addresses (optional)"),
       userTimezone: z.string().describe("User's timezone (e.g., 'America/New_York') - REQUIRED"),
       forceCreate: z.boolean().optional().default(false).describe("Force creation even if conflicts exist"),
     }),
@@ -883,7 +913,7 @@ export const testCalendarConnectionTool = tool(
 
 // Force create calendar event tool (for overriding conflicts)
 export const forceCreateCalendarEventTool = tool(
-  async ({ summary, startTime, endTime, description = "", location = "", userTimezone }) => {
+  async ({ summary, startTime, endTime, description = "", location = "", attendees = [], userTimezone }) => {
     // Simply call the main create tool with forceCreate = true
     return await createCalendarEventTool.invoke({
       summary,
@@ -891,6 +921,7 @@ export const forceCreateCalendarEventTool = tool(
       endTime,
       description,
       location,
+      attendees,
       userTimezone,
       forceCreate: true
     });
@@ -904,6 +935,7 @@ export const forceCreateCalendarEventTool = tool(
       endTime: z.string().describe("Event end time (natural language or ISO format)"),
       description: z.string().optional().default("").describe("Event description (optional)"),
       location: z.string().optional().default("").describe("Event location (optional)"),
+      attendees: z.array(z.string().email()).optional().default([]).describe("Array of attendee email addresses (optional)"),
       userTimezone: z.string().describe("User's timezone (e.g., 'America/New_York') - REQUIRED"),
     }),
   }

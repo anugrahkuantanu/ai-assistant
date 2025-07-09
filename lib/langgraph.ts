@@ -35,6 +35,23 @@ import {
   testCalendarConnectionTool,
   forceCreateCalendarEventTool
 } from "./tools/calendarTools";
+import {
+  webSearchTool,
+  newsSearchTool,
+  quickSearchTool,
+  testSearchConnectionTool
+} from "./tools/searchTools";
+import { 
+  checkUploadedDataTool, 
+  readDataTool, 
+  queryDataTool, 
+  clearDataTool 
+} from "./tools/dataAnalysisTools";
+import { 
+  analyzeDataForChartsTool, 
+  createChartTool, 
+  createMultiChartAnalysisTool 
+} from "./tools/diagramTools";
 import SYSTEM_MESSAGE from "../constants/systemMessage";
 
 // Simplified state annotation
@@ -60,6 +77,33 @@ const trimmer = trimMessages({
 // Initialize tools with robust error handling
 const initializeTools = async () => {
     const tools = [];
+    
+    // Add search tools (always available - no configuration required)
+    tools.push(
+        webSearchTool,
+        newsSearchTool,
+        quickSearchTool,
+        testSearchConnectionTool
+    );
+    console.log("✅ Search tools loaded (web, news, quick search)");
+    
+    // Add data analysis tools (always available - no configuration required)
+    tools.push(
+        checkUploadedDataTool,
+        readDataTool,
+        queryDataTool,
+        clearDataTool
+    );
+    console.log("✅ Data analysis tools loaded (check, read, query, clear)");
+    
+    // Add diagram/chart creation tools (always available - no configuration required)
+    tools.push(
+        analyzeDataForChartsTool,
+        createChartTool,
+        createMultiChartAnalysisTool
+    );
+    console.log("✅ Diagram tools loaded (analyze, create chart, multi-chart analysis)");
+    
     
     // Add email tools if configured
     if (process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
@@ -312,7 +356,8 @@ function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
 export async function submitQuestion(
   messages: BaseMessage[],
   chatId: string,
-  modelConfig?: { model: string; apiKey?: string; temperature?: number; maxTokens?: number }
+  modelConfig?: { model: string; apiKey?: string; temperature?: number; maxTokens?: number },
+  userId?: string
 ) {
     try {
         // Add caching headers for Anthropic models

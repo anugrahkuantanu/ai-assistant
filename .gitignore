@@ -44,3 +44,10 @@ next-env.d.ts
 # clerk configuration (can include secrets)
 /.clerk/
 langgraph.md
+
+# chromadb vector database
+/chromadb/
+chromadb/
+
+.claude 
+uploads/
