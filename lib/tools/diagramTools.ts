@@ -2,6 +2,7 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { ChartToolResponse, MultiChartResponse, DataAnalysisResponse } from '../types/charts';
 
 // Detect data types and suggest appropriate chart types
 function detectDataTypes(data: any[]): { 
@@ -240,7 +241,7 @@ export const analyzeDataForChartsTool = tool(
       return {
         success: true,
         fileName,
-        rowCount: data.length - 1, // Exclude header
+        rowCount: data.length - 1,
         columns: analysis.columns,
         suggestedCharts: analysis.suggestedCharts,
         recommendations: {
@@ -249,18 +250,41 @@ export const analyzeDataForChartsTool = tool(
           bestForDistribution: 'histogram',
           bestForParts: 'pie'
         }
-      };
+      } as DataAnalysisResponse;
       
     } catch (error) {
       return {
         success: false,
         error: `Error analyzing data: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
+      } as DataAnalysisResponse;
     }
   },
   {
     name: 'analyze_data_for_charts',
     description: `Analyze uploaded data to suggest appropriate chart types and understand data structure.
+    
+    Returns a JSON response with the following structure:
+    {
+      "success": true,
+      "fileName": "string",
+      "rowCount": number,
+      "columns": [
+        {
+          "name": "string",
+          "type": "string|number|date|boolean", 
+          "sample": ["sample values array"]
+        }
+      ],
+      "suggestedCharts": ["scatter", "line", "bar", "pie"],
+      "recommendations": {
+        "bestForTrends": "line|bar",
+        "bestForComparison": "bar",
+        "bestForDistribution": "histogram", 
+        "bestForParts": "pie"
+      }
+    }
+    
+    IMPORTANT: Always return the complete JSON response to the user so they can see the data structure and recommendations.
     
     Use this tool to:
     - Understand data types and structure
@@ -317,19 +341,6 @@ export const createChartTool = tool(
 
       const chartConfig = generateChartConfig(data, chartType, xColumn, yColumn, title, options);
       
-      // Format for display in chat
-      const chartDataString = JSON.stringify({ chartConfig });
-      const displayMessage = `### Chart Created: ${title || `${yColumn} vs ${xColumn}`}
-
-Chart Type: **${chartType}**
-X-Axis: **${xColumn}**
-Y-Axis: **${yColumn}**
-Data Points: **${data.length - 1}**
-
----CHART-START---
-${chartDataString}
----CHART-END---`;
-
       return {
         success: true,
         fileName,
@@ -338,20 +349,60 @@ ${chartDataString}
         xColumn,
         yColumn,
         title: title || `${yColumn} vs ${xColumn}`,
-        dataPoints: data.length - 1,
-        displayMessage
-      };
+        dataPoints: data.length - 1
+      } as ChartToolResponse;
       
     } catch (error) {
       return {
         success: false,
         error: `Error creating chart: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
+      } as ChartToolResponse;
     }
   },
   {
     name: 'create_chart',
     description: `Create charts and diagrams from uploaded data.
+    
+    Returns a JSON response with the following structure:
+    {
+      "success": true,
+      "fileName": "string",
+      "chartConfig": {
+        "type": "scatter|line|bar|pie|histogram|box|area|heatmap",
+        "title": "string",
+        "plotlyType": "string",
+        "plotlyData": [
+          {
+            "x": ["array of x values"],
+            "y": ["array of y values"], 
+            "type": "string",
+            "name": "string",
+            "mode": "string (optional)"
+          }
+        ],
+        "layout": {
+          "title": "string",
+          "xaxis": { "title": "string" },
+          "yaxis": { "title": "string" },
+          "responsive": true
+        },
+        "data": {
+          "x": ["array of x values"],
+          "y": ["array of y values"],
+          "xLabel": "string",
+          "yLabel": "string"
+        }
+      },
+      "chartType": "string",
+      "xColumn": "string", 
+      "yColumn": "string",
+      "title": "string",
+      "dataPoints": number
+    }
+    
+    CRITICAL: When you receive this response, return the ENTIRE JSON response to the user. 
+    The UI will automatically detect the chartConfig and render the chart.
+    DO NOT modify or summarize the response - return it exactly as received.
     
     Supported chart types:
     - scatter: Scatter plot for numeric data relationships
@@ -361,14 +412,7 @@ ${chartDataString}
     - histogram: Distribution of a single variable
     - box: Box plot for statistical distribution
     - area: Area chart for cumulative data
-    - heatmap: Heat map for matrix data
-    
-    IMPORTANT: Always return the 'displayMessage' from the response to show the chart in the chat interface.
-    
-    Use this tool to:
-    - Visualize data relationships
-    - Create charts for analysis
-    - Generate diagrams for presentations`,
+    - heatmap: Heat map for matrix data`,
     schema: z.object({
       fileId: z.string().describe('The ID of the uploaded file to create chart from'),
       chartType: z.enum(['scatter', 'line', 'bar', 'pie', 'histogram', 'box', 'area', 'heatmap']).describe('The type of chart to create'),
@@ -468,45 +512,67 @@ export const createMultiChartAnalysisTool = tool(
           }
       }
       
-      // Format for display in chat
-      const chartDataString = JSON.stringify({ charts, fileName, analysisType });
-      const displayMessage = `### Multi-Chart Analysis: ${fileName}
-
-Analysis Type: **${analysisType}**
-Charts Generated: **${charts.length}**
-
----CHART-START---
-${chartDataString}
----CHART-END---`;
-
       return {
         success: true,
         fileName,
         analysisType,
         charts,
         chartCount: charts.length,
-        dataAnalysis: analysis,
-        displayMessage
-      };
+        dataAnalysis: analysis
+      } as MultiChartResponse;
       
     } catch (error) {
       return {
         success: false,
         error: `Error creating analysis: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
+      } as MultiChartResponse;
     }
   },
   {
     name: 'create_multi_chart_analysis',
     description: `Create comprehensive data analysis with multiple charts.
     
+    Returns a JSON response with the following structure:
+    {
+      "success": true,
+      "fileName": "string",
+      "analysisType": "overview|distribution|comparison|trends",
+      "charts": [
+        {
+          "type": "chart type",
+          "title": "string", 
+          "plotlyType": "string",
+          "plotlyData": ["array of plotly traces"],
+          "layout": {
+            "title": "string",
+            "xaxis": { "title": "string" },
+            "yaxis": { "title": "string" },
+            "responsive": true
+          },
+          "data": {
+            "x": ["array"],
+            "y": ["array"], 
+            "xLabel": "string",
+            "yLabel": "string"
+          }
+        }
+      ],
+      "chartCount": number,
+      "dataAnalysis": {
+        "columns": ["column info array"],
+        "suggestedCharts": ["array of chart types"]
+      }
+    }
+    
+    CRITICAL: When you receive this response, return the ENTIRE JSON response to the user.
+    The UI will automatically detect the charts array and render all charts in a grid layout.
+    DO NOT modify or summarize the response - return it exactly as received.
+    
     Analysis types:
     - overview: General overview with correlation and comparison charts
     - distribution: Focus on data distribution patterns
     - comparison: Compare categories and values
     - trends: Show trends over time (requires date columns)
-    
-    IMPORTANT: Always return the 'displayMessage' from the response to show the charts in the chat interface.
     
     Use this tool to:
     - Get comprehensive data insights
