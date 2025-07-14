@@ -1,0 +1,42 @@
+{
+  "name": "mcp-unified-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for unified productivity tools",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": { "mcp-server": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "calendar",
+    "email",
+    "search",
+    "data-analysis",
+    "ai",
+    "assistant"
+  ],
+  "author": "AI Assistant",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.1",
+    "zod": "^3.22.4",
+    "tsdav": "^2.0.4",
+    "imapflow": "^1.0.133",
+    "nodemailer": "^6.9.8",
+    "puppeteer": "^22.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/nodemailer": "^6.4.14",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

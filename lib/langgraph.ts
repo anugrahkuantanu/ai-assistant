@@ -1,4 +1,5 @@
 import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 import {
     AIMessage,
     BaseMessage,
@@ -16,25 +17,13 @@ Annotation,
 } from "@langchain/langgraph";
 import { MemorySaver } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import wxflows from "@wxflows/sdk/langchain";
 import {
 ChatPromptTemplate,
 MessagesPlaceholder,
 } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai"; 
-import { 
-  readEmailsTool, 
-  sendEmailTool, 
-  testEmailConnectionTool 
-} from "./tools/emailTools";
-import { 
-  readCalendarTool, 
-  createCalendarEventTool, 
-  deleteCalendarEventTool,
-  checkCalendarConflictsTool,
-  testCalendarConnectionTool,
-  forceCreateCalendarEventTool
-} from "./tools/calendarTools";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
   webSearchTool,
   newsSearchTool,
@@ -71,10 +60,251 @@ const trimmer = trimMessages({
     startOn: "human",
 });
 
-// Connect to wxflows with error handling
 
 
-// Initialize tools with robust error handling
+// MCP Client singleton
+let mcpClient: Client | null = null;
+
+// Initialize MCP client connection
+const initializeMCPClient = async () => {
+    if (mcpClient) {
+        return mcpClient;
+    }
+    
+    try {
+        mcpClient = new Client(
+            {
+                name: "ai-assistant",
+                version: "1.0.0",
+            },
+            {
+                capabilities: {
+                    tools: {},
+                },
+            }
+        );
+        
+        const transport = new StdioClientTransport({
+            command: "node",
+            args: [process.cwd() + "/MCP_Server/dist/index.js"],
+        });
+        
+        await mcpClient.connect(transport);
+        console.log("✅ Connected to MCP server");
+        
+        return mcpClient;
+    } catch (error) {
+        console.error("❌ Failed to connect to MCP server:", error);
+        throw error;
+    }
+};
+
+// Create MCP tool wrappers
+const createMCPTools = () => {
+    // Email tools using MCP
+    const readEmailsMCPTool = tool(async ({ limit = 10 }: { limit?: number }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "read_emails",
+            arguments: {
+                limit,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                imapHost: process.env.EMAIL_IMAP_HOST || "imap.one.com",
+                imapPort: parseInt(process.env.EMAIL_IMAP_PORT || "993", 10),
+                secure: true
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "read_emails",
+        description: "Read recent emails from IMAP server",
+        schema: z.object({
+            limit: z.number().optional().default(10).describe("Number of emails to fetch (1-50, default: 10)")
+        })
+    });
+    
+    const sendEmailMCPTool = tool(async ({ to, subject, body, htmlBody, priority = "normal" }: { to: string; subject: string; body: string; htmlBody?: string; priority?: string }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "send_email",
+            arguments: {
+                to,
+                subject,
+                body,
+                htmlBody,
+                priority,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                smtpHost: process.env.EMAIL_SMTP_HOST || "send.one.com",
+                smtpPort: parseInt(process.env.EMAIL_SMTP_PORT || "465", 10),
+                secure: true
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "send_email",
+        description: "Send email via SMTP",
+        schema: z.object({
+            to: z.string().describe("Recipient email address"),
+            subject: z.string().describe("Email subject"),
+            body: z.string().describe("Email body (plain text)"),
+            htmlBody: z.string().optional().describe("HTML version of email"),
+            priority: z.string().optional().default("normal").describe("Email priority: low, normal, high")
+        })
+    });
+    
+    const testEmailConnectionMCPTool = tool(async () => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "test_email_connection",
+            arguments: {
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                smtpHost: process.env.EMAIL_SMTP_HOST || "send.one.com",
+                smtpPort: parseInt(process.env.EMAIL_SMTP_PORT || "465", 10),
+                secure: true
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "test_email_connection",
+        description: "Test email server connection",
+        schema: z.object({})
+    });
+    
+    // Calendar tools using MCP
+    const readCalendarMCPTool = tool(async ({ timeRange = "today", userTimezone = "UTC" }: { timeRange?: string; userTimezone?: string }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "read_calendar",
+            arguments: {
+                timeRange,
+                userTimezone,
+                caldavUrl: process.env.CALENDAR_CALDAV_URL,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                authMethod: "Basic"
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "read_calendar",
+        description: "Read calendar events for specified time range",
+        schema: z.object({
+            timeRange: z.string().optional().default("today").describe("Time range like 'today', 'tomorrow', 'this week', 'next 7 days'"),
+            userTimezone: z.string().optional().default("UTC").describe("User's timezone (e.g., 'America/New_York')")
+        })
+    });
+    
+    const createCalendarEventMCPTool = tool(async ({ summary, startTime, endTime, description, location, userTimezone = "UTC", attendees, forceCreate }: { summary: string; startTime: string; endTime: string; description?: string; location?: string; userTimezone?: string; attendees?: string[]; forceCreate?: boolean }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "create_calendar_event",
+            arguments: {
+                summary,
+                startTime,
+                endTime,
+                description,
+                location,
+                userTimezone,
+                attendees,
+                forceCreate,
+                caldavUrl: process.env.CALENDAR_CALDAV_URL,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                authMethod: "Basic"
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "create_calendar_event",
+        description: "Create new calendar event with conflict checking",
+        schema: z.object({
+            summary: z.string().describe("Event title"),
+            startTime: z.string().describe("Start time (natural language or ISO format)"),
+            endTime: z.string().describe("End time"),
+            description: z.string().optional().describe("Event description"),
+            location: z.string().optional().describe("Event location"),
+            userTimezone: z.string().optional().default("UTC").describe("User's timezone"),
+            attendees: z.array(z.string()).optional().describe("Array of email addresses"),
+            forceCreate: z.boolean().optional().describe("Create even if conflicts exist")
+        })
+    });
+    
+    const deleteCalendarEventMCPTool = tool(async ({ eventIdentifier, userTimezone = "UTC" }: { eventIdentifier: string; userTimezone?: string }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "delete_calendar_event",
+            arguments: {
+                eventIdentifier,
+                userTimezone,
+                caldavUrl: process.env.CALENDAR_CALDAV_URL,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                authMethod: "Basic"
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "delete_calendar_event",
+        description: "Delete a calendar event by UID or title",
+        schema: z.object({
+            eventIdentifier: z.string().describe("Event UID or unique part of event title"),
+            userTimezone: z.string().optional().default("UTC").describe("User's timezone")
+        })
+    });
+    
+    const checkCalendarConflictsMCPTool = tool(async ({ startTime, endTime, userTimezone = "UTC" }: { startTime: string; endTime: string; userTimezone?: string }) => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "check_calendar_conflicts",
+            arguments: {
+                startTime,
+                endTime,
+                userTimezone,
+                caldavUrl: process.env.CALENDAR_CALDAV_URL,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                authMethod: "Basic"
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "check_calendar_conflicts",
+        description: "Check if a proposed time slot has conflicts with existing events",
+        schema: z.object({
+            startTime: z.string().describe("Proposed event start time"),
+            endTime: z.string().describe("Proposed event end time"),
+            userTimezone: z.string().optional().default("UTC").describe("User's timezone")
+        })
+    });
+    
+    const testCalendarConnectionMCPTool = tool(async () => {
+        const client = await initializeMCPClient();
+        const result: any = await client.callTool({
+            name: "test_calendar_connection",
+            arguments: {
+                caldavUrl: process.env.CALENDAR_CALDAV_URL,
+                email: process.env.EMAIL_ADDRESS,
+                password: process.env.EMAIL_PASSWORD,
+                authMethod: "Basic"
+            }
+        });
+        return Array.isArray(result.content) ? result.content[0].text : result.content.text;
+    }, {
+        name: "test_calendar_connection",
+        description: "Test calendar server connection",
+        schema: z.object({})
+    });
+    
+    return {
+        emailTools: [readEmailsMCPTool, sendEmailMCPTool, testEmailConnectionMCPTool],
+        calendarTools: [readCalendarMCPTool, createCalendarEventMCPTool, deleteCalendarEventMCPTool, checkCalendarConflictsMCPTool, testCalendarConnectionMCPTool]
+    };
+};
+
+// Initialize tools with MCP integration
 const initializeTools = async () => {
     const tools = [];
     
@@ -104,28 +334,16 @@ const initializeTools = async () => {
     );
     console.log("✅ Diagram tools loaded (analyze, create chart, multi-chart analysis)");
     
-    
-    // Add email tools if configured
+    // Add MCP tools if email/calendar configured
     if (process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
-        tools.push(readEmailsTool, sendEmailTool, testEmailConnectionTool);
-        console.log("✅ Email tools loaded");
-    }
-
-    // Add calendar tools if configured
-    const calendarConfigured = process.env.CALENDAR_CALDAV_URL && 
-                              (process.env.CALENDAR_EMAIL || process.env.EMAIL_ADDRESS) && 
-                              (process.env.CALENDAR_PASSWORD || process.env.EMAIL_PASSWORD);
-    
-    if (calendarConfigured) {
-        tools.push(
-            readCalendarTool, 
-            createCalendarEventTool, 
-            deleteCalendarEventTool,
-            checkCalendarConflictsTool,
-            testCalendarConnectionTool,
-            forceCreateCalendarEventTool
-        );
-        console.log("✅ Calendar tools loaded (including conflict checking and deletion)");
+        const mcpTools = createMCPTools();
+        tools.push(...mcpTools.emailTools);
+        console.log("✅ MCP Email tools loaded");
+        
+        if (process.env.CALENDAR_CALDAV_URL) {
+            tools.push(...mcpTools.calendarTools);
+            console.log("✅ MCP Calendar tools loaded");
+        }
     }
   
     return tools;
@@ -166,7 +384,7 @@ export const initialiseModel = async ({
             handleLLMStart: async () => {
               console.log(`🚀 Starting ${model} call...`);
             },
-            handleLLMEnd: async (output: any) => {
+            handleLLMEnd: async () => {
               console.log(`✅ Completed ${model} call`);
             },
             handleLLMError: async (error: Error) => {
@@ -191,7 +409,7 @@ export const initialiseModel = async ({
             handleLLMStart: async () => {
               console.log(`🚀 Starting ${model} call...`);
             },
-            handleLLMEnd: async (output: any) => {
+            handleLLMEnd: async () => {
               console.log(`✅ Completed ${model} call`);
             },
             handleLLMError: async (error: Error) => {
@@ -239,8 +457,9 @@ const createWorkflow = async () => {
     return new StateGraph(CalendarStateAnnotation)
         .addNode("agent", async (state) => {
             try {
+                const currentSystemMessage = SYSTEM_MESSAGE.replace('{{CURRENT_TIME}}', new Date().toISOString());
                 const promptTemplate = ChatPromptTemplate.fromMessages([
-                    new SystemMessage(SYSTEM_MESSAGE),
+                    new SystemMessage(currentSystemMessage),
                     new MessagesPlaceholder("messages"),
                 ]);
 
@@ -287,8 +506,9 @@ export const createWorkflowWithConfig = async ({
   return new StateGraph(CalendarStateAnnotation)
     .addNode("agent", async (state) => {
       try {
+        const currentSystemMessage = SYSTEM_MESSAGE.replace('{{CURRENT_TIME}}', new Date().toISOString());
         const promptTemplate = ChatPromptTemplate.fromMessages([
-          new SystemMessage(SYSTEM_MESSAGE),
+          new SystemMessage(currentSystemMessage),
           new MessagesPlaceholder("messages"),
         ]);
         
@@ -375,7 +595,7 @@ export async function submitQuestion(
         const app = workflow.compile({ checkpointer });
 
         // Stream response
-        const stream = await app.streamEvents(
+        const stream = app.streamEvents(
             { messages: processedMessages },
             {
                 version: "v2",
